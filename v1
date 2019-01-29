@@ -1,0 +1,93 @@
+from bs4 import BeautifulSoup
+from requests import get
+import pandas as pd
+import matplotlib.pyplot as plt
+%matplotlib inline
+import seaborn as sns
+import numpy as np
+import time
+import pickle
+
+header = ({'User-Agent': 
+            'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 ' + \
+            '(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36'})
+
+first_page = "https://www.tripadvisor.com.au/Attractions-g4-Activities-Europe.html"
+response = get(first_page, headers=header)
+
+#If response is 200, we have success
+print(response)
+
+#Get urls of the pages listing the places
+first_page_html = BeautifulSoup(response.text, 'html.parser')
+length = int(first_page_html.find_all('a', class_="pageNum taLnk")[-1].text)
+
+list_urls = [first_page] + ["https://www.tripadvisor.com.au/Attractions-g4-Activities-oa" + str(50*i - 80) + "-Europe.html" \
+                            for i in range(length+1)]
+print(length, len(list_urls))
+
+%%time
+# WARNING TAKES 30 MINS TO RUN [36]
+#Get urls of each place
+place_urls = []
+i=0
+for list_page in list_urls:
+    response = get(list_page, headers=header)
+    page_html = BeautifulSoup(response.text, 'html.parser')
+    urls = page_html.find_all('a')
+    urls = [url.get('href') for url in urls]
+    urls = set([url for url in urls if ('/Attractions' in url) and ('Europe.' not in url)])
+    place_urls += ['https://www.tripadvisor.com.au' + url for url in urls]
+    
+    time.sleep(0.05)
+    if (i%100==0) & (i!=0):
+        print(i)
+    i += 1
+    
+#Save list
+with open('place_urls.txt', 'wb') as f:
+    pickle.dump(place_urls, f)
+print('number of pages = ' + str(i) + ', number of places =', len(place_urls))
+
+with open('place_urls.txt', 'rb') as f:
+    place_urls = pickle.load(f)
+    
+%%time
+attraction_urls = []
+
+for place_page in place_urls[::3000]:
+    place = ' '.join(place_page.split('-')[-1].split('.')[0].split('_'))
+    response = get(place_page, headers=header)
+    page_html = BeautifulSoup(response.text, 'html.parser')
+    
+    #Big places 
+    big_place = False
+    if 'Browse by Category' in str(page_html):
+        big_place = True
+        
+    category_urls = []
+    
+    if big_place:
+        category_class = "attractions-attraction-overview-main-ShelfCarouselItem__item_wrapper--3pJJS "
+        category_containers = page_html.find_all('div', class_=category_class)
+        for category in category_containers:
+            category_urls.append('https://www.tripadvisor.com.au' + category.find_all('a')[0].get('href'))
+        
+        for category_page in category_urls:
+            response = get(category_page, headers=header)
+            page_html = BeautifulSoup(response.text, 'html.parser')
+            attraction_containers = page_html.find_all('div', class_='attraction_element')
+            for attraction in attraction_containers:
+                try:
+                    attraction_urls.append('https://www.tripadvisor.com.au' + \
+                                           attraction.find_all('div', class_='listing_info')[0].find_all('a')[0].get('href'))
+                except:
+                    pass
+        
+    else:
+        
+        
+    time.sleep(0.05)
+    
+attraction_urls = list(set(attraction_urls))
+print(attraction_urls[:20:20])
